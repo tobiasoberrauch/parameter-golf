@@ -1,0 +1,16 @@
+{
+  "author": "Tobias Oberrauch",
+  "github_id": "tobiasoberrauch",
+  "name": "SP8192 + 3L Recurrence + Parallel Residuals + QK5.5 + Adaptive TTT",
+  "date": "2026-04-17",
+  "track": "10min_16mb",
+  "val_bpb": null,
+  "seeds": [42, 314, 999],
+  "hardware": "8xH100 80GB SXM",
+  "attribution": {
+    "sp8192_gptq_sdclip": "@clarkkev (PR #1394)",
+    "depth_recurrence": "@dexhunter (PR #1331, #1437)",
+    "parallel_residuals": "@Robby955 (PR #1412)",
+    "legal_ttt_framework": "@abaybektursun (PR #549), @dexhunter (PR #1413)"
+  }
+}

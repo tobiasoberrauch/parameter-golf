@@ -1,0 +1,8 @@
+{
+  "author": "Tobias Oberrauch",
+  "github_id": "tobiasoberrauch",
+  "name": "Sub-50M Mamba-2 SSM (First sub-50M byte-level SSM attempt)",
+  "date": "2026-04-17",
+  "track": "non_record_16mb",
+  "note": "Experimental: validating whether state-space models work at 16MB scale"
+}
