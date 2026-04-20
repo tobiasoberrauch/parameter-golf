@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wie unsere KI lernt</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; overflow-x: hidden; }
+
+/* Hero */
+.hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 70%); position: relative; overflow: hidden; }
+.hero h1 { font-size: 3.5rem; font-weight: 300; margin-bottom: 1rem; background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero p { font-size: 1.3rem; opacity: 0.7; max-width: 600px; line-height: 1.6; }
+.hero .scroll-hint { position: absolute; bottom: 40px; animation: bounce 2s infinite; font-size: 2rem; opacity: 0.5; }
+@keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+
+/* Floating particles */
+.particles { position: absolute; width: 100%; height: 100%; pointer-events: none; }
+.particle { position: absolute; width: 4px; height: 4px; background: rgba(96,165,250,0.3); border-radius: 50%; animation: float linear infinite; }
+@keyframes float { 0% { transform: translateY(100vh) rotate(0deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(-100px) rotate(720deg); opacity: 0; } }
+
+/* Sections */
+.section { min-height: 100vh; padding: 80px 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+.section:nth-child(odd) { background: linear-gradient(180deg, #0a0a1a 0%, #0f0f2e 50%, #0a0a1a 100%); }
+.section h2 { font-size: 2.2rem; margin-bottom: 0.5rem; text-align: center; }
+.section .subtitle { font-size: 1.1rem; opacity: 0.6; margin-bottom: 2rem; text-align: center; }
+.section .explanation { max-width: 700px; line-height: 1.8; font-size: 1.05rem; opacity: 0.85; text-align: center; margin-bottom: 2rem; }
+
+/* Animation containers */
+.anim-box { width: min(90vw, 800px); height: 400px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; position: relative; overflow: hidden; margin: 1rem 0; }
+.anim-box.tall { height: 500px; }
+
+/* Shared styles for animated elements */
+.token { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 10px; font-size: 0.9rem; font-weight: 600; white-space: nowrap; position: absolute; transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* Section 1: The Challenge */
+.challenge-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 700px; margin: 2rem 0; }
+.challenge-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 24px; text-align: center; transition: transform 0.3s; }
+.challenge-card:hover { transform: translateY(-4px); }
+.challenge-card .icon { font-size: 2.5rem; margin-bottom: 10px; }
+.challenge-card .label { font-size: 0.9rem; opacity: 0.6; }
+.challenge-card .value { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+
+/* Section 2: Transformer animation */
+.layer-stack { display: flex; flex-direction: column; gap: 4px; position: absolute; left: 50%; transform: translateX(-50%); top: 20px; }
+.layer-bar { height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; transition: all 0.5s; opacity: 0.7; }
+.layer-bar.active { opacity: 1; transform: scaleX(1.05); box-shadow: 0 0 20px rgba(96,165,250,0.3); }
+.data-dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #f472b6; box-shadow: 0 0 10px #f472b6; transition: top 0.3s ease-in-out; }
+
+/* Section 3: Attention */
+.word-row { display: flex; gap: 12px; justify-content: center; position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); }
+.word-box { padding: 10px 18px; background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); border-radius: 10px; font-size: 0.9rem; transition: all 0.5s; cursor: default; }
+.word-box.highlight { background: rgba(244,114,182,0.3); border-color: #f472b6; box-shadow: 0 0 15px rgba(244,114,182,0.3); transform: scale(1.1); }
+.word-box.dim { opacity: 0.3; transform: scale(0.95); }
+.attn-line { position: absolute; pointer-events: none; }
+.attn-label { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 1rem; opacity: 0.8; text-align: center; }
+
+/* Section 4: QK Gain */
+.gain-demo { display: flex; gap: 40px; align-items: flex-end; justify-content: center; height: 300px; position: relative; }
+.bar-group { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.gain-bar { width: 50px; border-radius: 8px 8px 0 0; transition: height 1s cubic-bezier(0.4, 0, 0.2, 1); min-height: 4px; }
+.bar-label { font-size: 0.8rem; opacity: 0.6; }
+.gain-controls { display: flex; gap: 20px; align-items: center; margin-top: 1rem; }
+.gain-slider { -webkit-appearance: none; width: 200px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); outline: none; }
+.gain-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #a78bfa; cursor: pointer; }
+.gain-value { font-size: 1.2rem; font-weight: 700; color: #a78bfa; min-width: 60px; }
+
+/* Section 5: Layer Looping */
+.loop-viz { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; max-width: 700px; margin: 1rem 0; }
+.loop-block { width: 52px; height: 52px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; transition: all 0.5s; position: relative; }
+.loop-block.looped { animation: pulse-glow 2s infinite; }
+@keyframes pulse-glow { 0%,100% { box-shadow: 0 0 5px rgba(167,139,250,0.3); } 50% { box-shadow: 0 0 20px rgba(167,139,250,0.6); } }
+.loop-arrow { font-size: 1.2rem; opacity: 0.4; }
+
+/* Section 6: Muon */
+.muon-canvas { width: 100%; height: 100%; }
+
+/* Section 7: GPTQ */
+.quant-row { display: flex; gap: 2px; justify-content: center; align-items: flex-end; height: 200px; }
+.quant-col { width: 8px; border-radius: 3px 3px 0 0; transition: all 1s; }
+.quant-controls { display: flex; gap: 20px; margin-top: 1rem; }
+.quant-btn { padding: 10px 24px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #e0e0e0; border-radius: 10px; cursor: pointer; transition: all 0.3s; font-size: 0.9rem; }
+.quant-btn:hover, .quant-btn.active { background: rgba(96,165,250,0.2); border-color: #60a5fa; }
+.quant-info { margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.7; }
+
+/* Section 8: TTT */
+.ttt-timeline { display: flex; gap: 0; width: min(90vw, 750px); height: 250px; position: relative; margin: 1rem 0; }
+.ttt-chunk { flex: 1; border: 1px solid rgba(255,255,255,0.1); position: relative; display: flex; flex-direction: column; transition: all 0.5s; border-radius: 8px; margin: 0 2px; overflow: hidden; cursor: pointer; }
+.ttt-chunk .phase { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; text-align: center; padding: 4px; transition: all 0.5s; }
+.ttt-chunk .phase-score { background: rgba(96,165,250,0.1); }
+.ttt-chunk .phase-learn { background: rgba(244,114,182,0.1); }
+.ttt-chunk.active .phase-score { background: rgba(96,165,250,0.3); }
+.ttt-chunk.active .phase-learn { background: rgba(244,114,182,0.3); }
+.ttt-chunk .chunk-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; opacity: 0.5; }
+.ttt-bar { position: absolute; bottom: 0; left: 0; height: 4px; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); transition: width 0.5s; border-radius: 2px; }
+.brain-level { display: flex; align-items: center; gap: 10px; margin-top: 2rem; }
+.brain-meter { width: 200px; height: 12px; background: rgba(255,255,255,0.05); border-radius: 6px; overflow: hidden; }
+.brain-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #60a5fa, #a78bfa); transition: width 1s; }
+
+/* Section 9: Pipeline */
+.pipeline { display: flex; flex-direction: column; gap: 0; align-items: center; max-width: 500px; margin: 1rem 0; }
+.pipe-step { width: 100%; padding: 16px 24px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); text-align: center; font-size: 0.95rem; transition: all 0.5s; position: relative; }
+.pipe-step:first-child { border-radius: 14px 14px 0 0; }
+.pipe-step:last-child { border-radius: 0 0 14px 14px; }
+.pipe-step .step-label { font-weight: 700; }
+.pipe-step .step-detail { font-size: 0.8rem; opacity: 0.5; margin-top: 2px; }
+.pipe-step.active { background: rgba(96,165,250,0.15); border-color: rgba(96,165,250,0.4); }
+.pipe-arrow { width: 2px; height: 20px; background: rgba(255,255,255,0.15); }
+
+/* Nav dots */
+.nav-dots { position: fixed; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 100; }
+.nav-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.2); cursor: pointer; transition: all 0.3s; }
+.nav-dot.active { background: #60a5fa; transform: scale(1.3); }
+
+/* SVG */
+svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+svg line { stroke-linecap: round; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .hero h1 { font-size: 2.2rem; }
+  .challenge-grid { grid-template-columns: 1fr; }
+  .anim-box { height: 300px; }
+  .gain-demo { gap: 20px; }
+  .gain-bar { width: 35px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Nav Dots -->
+<div class="nav-dots" id="navDots"></div>
+
+<!-- Hero -->
+<div class="hero section" data-name="Start">
+  <div class="particles" id="particles"></div>
+  <h1>Wie unsere KI lernt</h1>
+  <p>Eine visuelle Reise durch die Algorithmen hinter Parameter Golf &mdash; erklärt, als wärst du 10.</p>
+  <div class="scroll-hint">&darr;</div>
+</div>
+
+<!-- 1: The Challenge -->
+<div class="section" data-name="Challenge">
+  <h2>Die Aufgabe</h2>
+  <p class="subtitle">Was ist Parameter Golf?</p>
+  <p class="explanation">
+    Bau eine KI, die das nächste Wort in einem Text vorhersagen kann.
+    Aber: Das gesamte Programm darf nur <strong>16 MB</strong> groß sein
+    und es hat nur <strong>10 Minuten</strong> zum Lernen.
+  </p>
+  <div class="challenge-grid">
+    <div class="challenge-card">
+      <div class="icon">&#x1F4BE;</div>
+      <div class="label">Maximale Größe</div>
+      <div class="value">16 MB</div>
+    </div>
+    <div class="challenge-card">
+      <div class="icon">&#x23F1;</div>
+      <div class="label">Trainingszeit</div>
+      <div class="value">10 min</div>
+    </div>
+    <div class="challenge-card">
+      <div class="icon">&#x1F3C6;</div>
+      <div class="label">Weltrekord</div>
+      <div class="value">1.0810</div>
+    </div>
+  </div>
+  <p class="explanation" style="margin-top:1rem;">
+    Der Score heißt <strong>Bits per Byte</strong> (BPB). Niedriger = besser.
+    Die KI liest 8 Milliarden Wörter und lernt Muster. Dann wird sie geprüft: Wie gut sagt sie das nächste Wort voraus?
+  </p>
+</div>
+
+<!-- 2: Transformer -->
+<div class="section" data-name="Transformer">
+  <h2>Das Gehirn: Der Transformer</h2>
+  <p class="subtitle">Eine Kette von Filtern, die Text immer besser verstehen</p>
+  <p class="explanation">
+    Text wandert von unten nach oben durch 11 Schichten.
+    Jede Schicht versteht den Text ein bisschen besser.
+    Klicke auf "Start", um zu sehen, wie Daten durchfließen.
+  </p>
+  <div class="anim-box tall" id="transformerBox">
+    <div class="layer-stack" id="layerStack"></div>
+    <div class="data-dot" id="dataDot" style="display:none;"></div>
+    <button onclick="animateTransformer()" style="position:absolute;bottom:15px;right:15px;padding:8px 20px;background:rgba(96,165,250,0.2);border:1px solid #60a5fa;color:#60a5fa;border-radius:8px;cursor:pointer;font-size:0.9rem;">&#9654; Start</button>
+  </div>
+</div>
+
+<!-- 3: Attention -->
+<div class="section" data-name="Attention">
+  <h2>Attention: Wer ist wichtig?</h2>
+  <p class="subtitle">Die KI entscheidet, auf welche Wörter sie achtet</p>
+  <p class="explanation">
+    Um "..." vorherzusagen, muss die KI wissen, dass es um eine <strong>Katze</strong> geht.
+    Bewege die Maus über die Wörter, um zu sehen, worauf die KI achtet.
+  </p>
+  <div class="anim-box" id="attnBox">
+    <div class="attn-label">Die Katze, die gestern im Garten war, frisst <strong style="color:#f472b6">???</strong></div>
+    <svg id="attnSvg"></svg>
+    <div class="word-row" id="wordRow"></div>
+  </div>
+</div>
+
+<!-- 4: QK Gain -->
+<div class="section" data-name="QK-Gain">
+  <h2>QK-Gain: Schärferer Fokus</h2>
+  <p class="subtitle">Wie ein Textmarker für die Aufmerksamkeit</p>
+  <p class="explanation">
+    Normalerweise verteilt sich die Aufmerksamkeit auf alle Wörter.
+    Mit QK-Gain drehen wir den Kontrast hoch &mdash; wichtige Wörter bekommen fast die gesamte Aufmerksamkeit.
+  </p>
+  <div class="anim-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+    <div class="gain-demo" id="gainDemo"></div>
+    <div class="gain-controls">
+      <span style="opacity:0.6;font-size:0.9rem;">Normal</span>
+      <input type="range" class="gain-slider" id="gainSlider" min="1" max="8" step="0.1" value="3.3">
+      <span style="opacity:0.6;font-size:0.9rem;">Scharf</span>
+      <span class="gain-value" id="gainValue">3.3</span>
+    </div>
+  </div>
+</div>
+
+<!-- 5: Layer Looping -->
+<div class="section" data-name="Looping">
+  <h2>Layer Looping: Mehr Tiefe, gleiche Größe</h2>
+  <p class="subtitle">Das gleiche Sieb dreimal benutzen</p>
+  <p class="explanation">
+    Statt 11 verschiedene Filter zu bezahlen, lassen wir Filter 3, 4 und 5 <strong>dreimal hintereinander</strong> laufen.
+    So haben wir 17 Filter zum Preis von 11.
+  </p>
+  <div style="display:flex;flex-direction:column;align-items:center;">
+    <div style="margin-bottom:8px;opacity:0.5;font-size:0.85rem;">Physische Layer (11):</div>
+    <div class="loop-viz" id="physicalLayers"></div>
+    <div style="margin:20px 0 8px;opacity:0.5;font-size:0.85rem;">Virtuelle Layer (17) &mdash; Layer 3-5 werden 3&times; durchlaufen:</div>
+    <div class="loop-viz" id="virtualLayers"></div>
+  </div>
+</div>
+
+<!-- 6: Parallel Residuals -->
+<div class="section" data-name="Parallel">
+  <h2>Parallel Residuals</h2>
+  <p class="subtitle">Zwei Köpfe sind besser als einer</p>
+  <p class="explanation">
+    Ab Layer 7 arbeiten Attention und MLP <strong>gleichzeitig</strong> statt nacheinander.
+    Beide lesen den gleichen Input, und ihre Ergebnisse werden kombiniert.
+  </p>
+  <div class="anim-box" id="parallelBox">
+    <svg id="parallelSvg" width="100%" height="100%"></svg>
+  </div>
+</div>
+
+<!-- 7: Muon -->
+<div class="section" data-name="Muon">
+  <h2>Muon: Der spezielle Lehrer</h2>
+  <p class="subtitle">Alle Richtungen gleich stark korrigieren</p>
+  <p class="explanation">
+    Normale Optimierer (Adam) gehen vorsichtig in steile Richtungen und schnell in flache.
+    <strong>Muon</strong> orthogonalisiert den Gradienten: alle Richtungen werden gleich stark aktualisiert.
+    Die Animation zeigt, wie Muon (lila) vs. Adam (blau) zum Ziel findet.
+  </p>
+  <div class="anim-box" id="muonBox">
+    <canvas class="muon-canvas" id="muonCanvas"></canvas>
+    <button onclick="startMuonAnim()" style="position:absolute;bottom:15px;right:15px;padding:8px 20px;background:rgba(167,139,250,0.2);border:1px solid #a78bfa;color:#a78bfa;border-radius:8px;cursor:pointer;font-size:0.9rem;">&#9654; Vergleichen</button>
+  </div>
+</div>
+
+<!-- 8: GPTQ -->
+<div class="section" data-name="GPTQ">
+  <h2>GPTQ: Schrumpfen ohne viel zu verlieren</h2>
+  <p class="subtitle">Von HD-Foto zu Pixel-Art</p>
+  <p class="explanation">
+    Jedes Gewicht wird von 32 Bit (Milliarden Stufen) auf <strong>6 Bit</strong> (64 Stufen) reduziert.
+    GPTQ ist clever: Rundungsfehler werden auf andere Gewichte verteilt, sodass der Gesamtfehler minimal bleibt.
+  </p>
+  <div class="anim-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+    <div class="quant-row" id="quantRow"></div>
+    <div class="quant-controls">
+      <button class="quant-btn active" onclick="setQuant(32)">32 Bit</button>
+      <button class="quant-btn" onclick="setQuant(8)">8 Bit</button>
+      <button class="quant-btn" onclick="setQuant(6)">6 Bit</button>
+    </div>
+    <div class="quant-info" id="quantInfo">4.294.967.296 mögliche Stufen &middot; 100% Größe</div>
+  </div>
+</div>
+
+<!-- 9: TTT -->
+<div class="section" data-name="TTT">
+  <h2>Test-Time Training: Lernen bei der Prüfung</h2>
+  <p class="subtitle">Der geheimste Trick</p>
+  <p class="explanation">
+    Das Modell lernt <strong>während der Prüfung</strong> weiter.
+    Erst benoten (Note zählt!), dann auf dem gleichen Text weiterlernen.
+    Der nächste Textblock profitiert davon. Klicke auf die Blöcke!
+  </p>
+  <div style="display:flex;flex-direction:column;align-items:center;">
+    <div class="ttt-timeline" id="tttTimeline"></div>
+    <div class="brain-level">
+      <span style="font-size:0.9rem;opacity:0.6;">Modell-Wissen:</span>
+      <div class="brain-meter"><div class="brain-fill" id="brainFill" style="width:30%"></div></div>
+      <span id="brainPct" style="font-size:0.9rem;opacity:0.6;">30%</span>
+    </div>
+  </div>
+</div>
+
+<!-- 10: Full Pipeline -->
+<div class="section" data-name="Pipeline">
+  <h2>Das große Bild</h2>
+  <p class="subtitle">Alles zusammen</p>
+  <div class="pipeline" id="pipeline"></div>
+</div>
+
+<script>
+// Particles
+const particlesEl = document.getElementById('particles');
+for (let i = 0; i < 30; i++) {
+  const p = document.createElement('div');
+  p.className = 'particle';
+  p.style.left = Math.random() * 100 + '%';
+  p.style.animationDuration = (8 + Math.random() * 12) + 's';
+  p.style.animationDelay = Math.random() * 10 + 's';
+  p.style.width = p.style.height = (2 + Math.random() * 4) + 'px';
+  particlesEl.appendChild(p);
+}
+
+// Nav dots
+const sections = document.querySelectorAll('.section');
+const navDots = document.getElementById('navDots');
+sections.forEach((s, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'nav-dot';
+  dot.title = s.dataset.name;
+  dot.onclick = () => s.scrollIntoView({ behavior: 'smooth' });
+  navDots.appendChild(dot);
+});
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const idx = [...sections].indexOf(e.target);
+      document.querySelectorAll('.nav-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+    }
+  });
+}, { threshold: 0.5 });
+sections.forEach(s => observer.observe(s));
+
+// 2: Transformer layers
+const layerStack = document.getElementById('layerStack');
+const layerNames = [
+  'Embedding', 'Layer 0 (Encoder)', 'Layer 1', 'Layer 2', 'Layer 3', 'Layer 4',
+  'Layer 5 (Decoder)', 'Layer 6', 'Layer 7 [Parallel]', 'Layer 8 [Parallel]',
+  'Layer 9 [Parallel]', 'Layer 10 [Parallel]', 'Final Norm + Output'
+];
+const layerColors = [
+  '#1e3a5f','#1e4d7a','#1e5a8a','#2a4d8a','#3a4d9a','#2a4d8a',
+  '#1e5a8a','#1e4d7a','#5a3d7a','#6a3d8a','#7a3d9a','#8a3daa','#2a6a3a'
+];
+layerNames.forEach((name, i) => {
+  const bar = document.createElement('div');
+  bar.className = 'layer-bar';
+  bar.id = 'layer-' + i;
+  bar.style.width = (180 + (i < 6 ? i * 10 : (12-i) * 10)) + 'px';
+  bar.style.background = layerColors[i];
+  bar.textContent = name;
+  layerStack.appendChild(bar);
+});
+
+function animateTransformer() {
+  const dot = document.getElementById('dataDot');
+  const stack = document.getElementById('layerStack');
+  const bars = stack.querySelectorAll('.layer-bar');
+  dot.style.display = 'block';
+  dot.style.left = '50%';
+  dot.style.transform = 'translateX(-50%)';
+  let step = 0;
+  function next() {
+    if (step >= bars.length) { dot.style.display = 'none'; bars.forEach(b => b.classList.remove('active')); return; }
+    bars.forEach(b => b.classList.remove('active'));
+    bars[step].classList.add('active');
+    const rect = bars[step].getBoundingClientRect();
+    const boxRect = document.getElementById('transformerBox').getBoundingClientRect();
+    dot.style.top = (rect.top - boxRect.top + rect.height / 2 - 6) + 'px';
+    step++;
+    setTimeout(next, 400);
+  }
+  next();
+}
+
+// 3: Attention
+const words = ['Die', 'Katze', 'die', 'gestern', 'im', 'Garten', 'war', 'frisst'];
+const attnWeights = {
+  'Die': [0.1, 0.8, 0.02, 0.01, 0.01, 0.01, 0.01, 0.04],
+  'Katze': [0.05, 0.7, 0.02, 0.02, 0.01, 0.05, 0.05, 0.1],
+  'die': [0.3, 0.4, 0.1, 0.05, 0.02, 0.03, 0.05, 0.05],
+  'gestern': [0.02, 0.1, 0.05, 0.5, 0.08, 0.1, 0.1, 0.05],
+  'im': [0.02, 0.05, 0.02, 0.1, 0.3, 0.4, 0.06, 0.05],
+  'Garten': [0.01, 0.15, 0.01, 0.1, 0.2, 0.4, 0.08, 0.05],
+  'war': [0.05, 0.3, 0.05, 0.15, 0.05, 0.15, 0.2, 0.05],
+  'frisst': [0.02, 0.65, 0.01, 0.02, 0.01, 0.02, 0.02, 0.25],
+};
+const wordRow = document.getElementById('wordRow');
+const attnSvg = document.getElementById('attnSvg');
+
+words.forEach((w, i) => {
+  const box = document.createElement('div');
+  box.className = 'word-box';
+  box.textContent = w;
+  box.dataset.idx = i;
+  box.addEventListener('mouseenter', () => showAttn(w, i));
+  box.addEventListener('mouseleave', clearAttn);
+  wordRow.appendChild(box);
+});
+
+function showAttn(word, targetIdx) {
+  const weights = attnWeights[word];
+  const boxes = wordRow.querySelectorAll('.word-box');
+  attnSvg.innerHTML = '';
+  const boxRect = document.getElementById('attnBox').getBoundingClientRect();
+  const targetBox = boxes[targetIdx].getBoundingClientRect();
+  const tx = targetBox.left + targetBox.width/2 - boxRect.left;
+  const ty = targetBox.top - boxRect.top;
+
+  boxes.forEach((b, i) => {
+    const w = weights[i];
+    if (i === targetIdx) { b.classList.add('highlight'); b.classList.remove('dim'); }
+    else if (w > 0.15) { b.classList.remove('dim'); b.classList.remove('highlight'); b.style.opacity = 0.5 + w; }
+    else { b.classList.add('dim'); b.classList.remove('highlight'); }
+
+    if (i !== targetIdx && w > 0.05) {
+      const srcRect = b.getBoundingClientRect();
+      const sx = srcRect.left + srcRect.width/2 - boxRect.left;
+      const sy = srcRect.top - boxRect.top;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', sx); line.setAttribute('y1', sy);
+      line.setAttribute('x2', tx); line.setAttribute('y2', ty - 40);
+      line.setAttribute('stroke', `rgba(244,114,182,${w})`);
+      line.setAttribute('stroke-width', w * 6);
+      attnSvg.appendChild(line);
+    }
+  });
+}
+
+function clearAttn() {
+  attnSvg.innerHTML = '';
+  wordRow.querySelectorAll('.word-box').forEach(b => {
+    b.classList.remove('highlight', 'dim');
+    b.style.opacity = '';
+  });
+}
+
+// 4: QK Gain
+const gainWords = ['Die', 'Katze', 'die', 'gestern', 'im', 'Garten', 'war', 'frisst'];
+const gainBase = [0.05, 0.55, 0.03, 0.05, 0.02, 0.08, 0.07, 0.15];
+const gainDemo = document.getElementById('gainDemo');
+const gainSlider = document.getElementById('gainSlider');
+const gainValueEl = document.getElementById('gainValue');
+
+gainWords.forEach((w, i) => {
+  const group = document.createElement('div');
+  group.className = 'bar-group';
+  const bar = document.createElement('div');
+  bar.className = 'gain-bar';
+  bar.id = 'gain-bar-' + i;
+  bar.style.background = gainBase[i] > 0.3 ? '#f472b6' : 'rgba(96,165,250,0.6)';
+  group.appendChild(bar);
+  const label = document.createElement('div');
+  label.className = 'bar-label';
+  label.textContent = w;
+  group.appendChild(label);
+  gainDemo.appendChild(group);
+});
+
+function updateGain() {
+  const temp = parseFloat(gainSlider.value);
+  gainValueEl.textContent = temp.toFixed(1);
+  const scaled = gainBase.map(v => Math.pow(v, 1/temp));
+  const sum = scaled.reduce((a, b) => a + b, 0);
+  const normed = scaled.map(v => v / sum);
+  normed.forEach((v, i) => {
+    const bar = document.getElementById('gain-bar-' + i);
+    bar.style.height = (v * 250) + 'px';
+    bar.style.background = v > 0.25 ? '#f472b6' : v > 0.1 ? 'rgba(167,139,250,0.7)' : 'rgba(96,165,250,0.4)';
+  });
+}
+gainSlider.addEventListener('input', updateGain);
+updateGain();
+
+// 5: Layer looping
+const physLayers = document.getElementById('physicalLayers');
+const virtLayers = document.getElementById('virtualLayers');
+for (let i = 0; i < 11; i++) {
+  const block = document.createElement('div');
+  block.className = 'loop-block';
+  block.textContent = i;
+  block.style.background = (i >= 3 && i <= 5) ? 'rgba(167,139,250,0.3)' : 'rgba(96,165,250,0.15)';
+  block.style.border = '1px solid ' + ((i >= 3 && i <= 5) ? 'rgba(167,139,250,0.5)' : 'rgba(96,165,250,0.3)');
+  physLayers.appendChild(block);
+}
+const virtualOrder = [0,1,2, 3,4,5, 3,4,5, 3,4,5, 6,7,8,9,10];
+virtualOrder.forEach((v, i) => {
+  const block = document.createElement('div');
+  block.className = 'loop-block' + ((v >= 3 && v <= 5) ? ' looped' : '');
+  block.textContent = v;
+  block.style.background = (v >= 3 && v <= 5) ? 'rgba(167,139,250,0.3)' : 'rgba(96,165,250,0.15)';
+  block.style.border = '1px solid ' + ((v >= 3 && v <= 5) ? 'rgba(167,139,250,0.5)' : 'rgba(96,165,250,0.3)');
+  block.style.fontSize = '0.75rem';
+  block.style.width = '42px';
+  block.style.height = '42px';
+  virtLayers.appendChild(block);
+});
+
+// 6: Parallel residuals
+const pSvg = document.getElementById('parallelSvg');
+function drawParallel() {
+  const w = pSvg.clientWidth || 800, h = pSvg.clientHeight || 400;
+  const cx = w / 2;
+  // Sequential side
+  const sx = cx - 140;
+  const seqSteps = [
+    { y: h-60, label: 'Input', color: '#60a5fa' },
+    { y: h-120, label: 'Norm', color: '#4a8ad4' },
+    { y: h-190, label: 'Attention', color: '#a78bfa' },
+    { y: h-250, label: 'Norm', color: '#4a8ad4' },
+    { y: h-310, label: 'MLP', color: '#f472b6' },
+    { y: h-370, label: 'Output', color: '#60a5fa' },
+  ];
+  // Parallel side
+  const px = cx + 140;
+  const parSteps = [
+    { y: h-60, label: 'Input', color: '#60a5fa' },
+    { y: h-120, label: 'Norm', color: '#4a8ad4' },
+    { y: h-210, label: 'Attention', color: '#a78bfa', x: -50 },
+    { y: h-210, label: 'MLP', color: '#f472b6', x: 50 },
+    { y: h-310, label: '+ Addieren', color: '#34d399' },
+    { y: h-370, label: 'Output', color: '#60a5fa' },
+  ];
+
+  let html = '';
+  // Labels
+  html += `<text x="${sx}" y="25" fill="#60a5fa" text-anchor="middle" font-size="14" font-weight="700">Sequentiell (Layer 0-6)</text>`;
+  html += `<text x="${px}" y="25" fill="#a78bfa" text-anchor="middle" font-size="14" font-weight="700">Parallel (Layer 7+)</text>`;
+  // Divider
+  html += `<line x1="${cx}" y1="40" x2="${cx}" y2="${h-20}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="4"/>`;
+
+  // Draw sequential
+  for (let i = 0; i < seqSteps.length; i++) {
+    const s = seqSteps[i];
+    html += `<rect x="${sx-50}" y="${s.y-16}" width="100" height="32" rx="8" fill="${s.color}22" stroke="${s.color}66"/>`;
+    html += `<text x="${sx}" y="${s.y+5}" fill="${s.color}" text-anchor="middle" font-size="12" font-weight="600">${s.label}</text>`;
+    if (i > 0) {
+      html += `<line x1="${sx}" y1="${seqSteps[i-1].y-16}" x2="${sx}" y2="${s.y+16}" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>`;
+    }
+  }
+  // Parallel
+  for (let i = 0; i < parSteps.length; i++) {
+    const s = parSteps[i];
+    const x = px + (s.x || 0);
+    html += `<rect x="${x-50}" y="${s.y-16}" width="100" height="32" rx="8" fill="${s.color}22" stroke="${s.color}66"/>`;
+    html += `<text x="${x}" y="${s.y+5}" fill="${s.color}" text-anchor="middle" font-size="12" font-weight="600">${s.label}</text>`;
+  }
+  // Parallel arrows
+  html += `<line x1="${px}" y1="${h-76}" x2="${px}" y2="${h-136}" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>`;
+  // Fork
+  html += `<line x1="${px}" y1="${h-136}" x2="${px-50}" y2="${h-194}" stroke="rgba(167,139,250,0.4)" stroke-width="2"/>`;
+  html += `<line x1="${px}" y1="${h-136}" x2="${px+50}" y2="${h-194}" stroke="rgba(244,114,182,0.4)" stroke-width="2"/>`;
+  // Merge
+  html += `<line x1="${px-50}" y1="${h-226}" x2="${px}" y2="${h-294}" stroke="rgba(167,139,250,0.4)" stroke-width="2"/>`;
+  html += `<line x1="${px+50}" y1="${h-226}" x2="${px}" y2="${h-294}" stroke="rgba(244,114,182,0.4)" stroke-width="2"/>`;
+  html += `<line x1="${px}" y1="${h-326}" x2="${px}" y2="${h-354}" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>`;
+
+  pSvg.innerHTML = html;
+}
+setTimeout(drawParallel, 100);
+window.addEventListener('resize', drawParallel);
+
+// 7: Muon canvas
+function startMuonAnim() {
+  const canvas = document.getElementById('muonCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.clientWidth * 2;
+  canvas.height = canvas.clientHeight * 2;
+  ctx.scale(2, 2);
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+
+  // Loss landscape (elongated valley)
+  function loss(x, y) { return 0.5 * (10 * x * x + y * y); }
+  function gradX(x) { return 10 * x; }
+  function gradY(y) { return y; }
+
+  // Draw contours
+  ctx.clearRect(0, 0, W, H);
+  const cx = W/2, cy = H/2, scale = 3;
+  for (let r = 10; r < 200; r += 18) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.32, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${0.04})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  // Target
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(52,211,153,0.5)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(52,211,153,0.8)';
+  ctx.font = '12px system-ui';
+  ctx.fillText('Ziel', cx + 10, cy + 4);
+
+  // Adam path
+  let ax = -0.8, ay = -0.9;
+  const adamPath = [[cx + ax * scale * 60, cy + ay * scale * 60]];
+  let mx = 0, my = 0, vx = 0, vy = 0;
+  for (let i = 0; i < 50; i++) {
+    const gx = gradX(ax), gy = gradY(ay);
+    mx = 0.9 * mx + 0.1 * gx; my = 0.9 * my + 0.1 * gy;
+    vx = 0.99 * vx + 0.01 * gx * gx; vy = 0.99 * vy + 0.01 * gy * gy;
+    ax -= 0.15 * mx / (Math.sqrt(vx) + 1e-8);
+    ay -= 0.15 * my / (Math.sqrt(vy) + 1e-8);
+    adamPath.push([cx + ax * scale * 60, cy + ay * scale * 60]);
+  }
+
+  // Muon path (orthogonalized gradient)
+  let bx = -0.8, by = -0.9;
+  const muonPath = [[cx + bx * scale * 60, cy + by * scale * 60]];
+  let momX = 0, momY = 0;
+  for (let i = 0; i < 50; i++) {
+    let gx = gradX(bx), gy = gradY(by);
+    momX = 0.99 * momX + gx; momY = 0.99 * momY + gy;
+    gx = gx + 0.99 * momX; gy = gy + 0.99 * momY;
+    // Orthogonalize: normalize to unit length (polar decomposition for 1D = just normalize)
+    const norm = Math.sqrt(gx * gx + gy * gy) + 1e-8;
+    gx /= norm; gy /= norm;
+    bx -= 0.02 * gx;
+    by -= 0.02 * gy;
+    muonPath.push([cx + bx * scale * 60, cy + by * scale * 60]);
+  }
+
+  // Animate
+  let frame = 0;
+  function draw() {
+    if (frame > 50) return;
+    // Adam
+    if (frame > 0) {
+      ctx.beginPath();
+      ctx.moveTo(adamPath[frame-1][0], adamPath[frame-1][1]);
+      ctx.lineTo(adamPath[frame][0], adamPath[frame][1]);
+      ctx.strokeStyle = 'rgba(96,165,250,0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(adamPath[frame][0], adamPath[frame][1], 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#60a5fa';
+      ctx.fill();
+    }
+    // Muon
+    if (frame > 0) {
+      ctx.beginPath();
+      ctx.moveTo(muonPath[frame-1][0], muonPath[frame-1][1]);
+      ctx.lineTo(muonPath[frame][0], muonPath[frame][1]);
+      ctx.strokeStyle = 'rgba(167,139,250,0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(muonPath[frame][0], muonPath[frame][1], 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#a78bfa';
+      ctx.fill();
+    }
+    // Labels
+    if (frame === 1) {
+      ctx.fillStyle = '#60a5fa'; ctx.font = 'bold 12px system-ui';
+      ctx.fillText('Adam', adamPath[0][0] - 30, adamPath[0][1] - 10);
+      ctx.fillStyle = '#a78bfa';
+      ctx.fillText('Muon', muonPath[0][0] + 10, muonPath[0][1] - 10);
+    }
+    frame++;
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// 8: GPTQ
+const quantRow = document.getElementById('quantRow');
+const origWeights = [];
+for (let i = 0; i < 60; i++) {
+  origWeights.push(Math.random() * 2 - 1);
+  const col = document.createElement('div');
+  col.className = 'quant-col';
+  col.id = 'qcol-' + i;
+  quantRow.appendChild(col);
+}
+function setQuant(bits) {
+  document.querySelectorAll('.quant-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const levels = Math.pow(2, bits);
+  const step = 2.0 / levels;
+  origWeights.forEach((w, i) => {
+    const q = bits === 32 ? w : Math.round(w / step) * step;
+    const h = Math.abs(q) * 80 + 10;
+    const col = document.getElementById('qcol-' + i);
+    col.style.height = h + 'px';
+    const hue = q > 0 ? 220 : 330;
+    const sat = bits === 32 ? 60 : (bits === 8 ? 50 : 40);
+    col.style.background = `hsl(${hue}, ${sat}%, ${40 + Math.abs(q) * 30}%)`;
+    col.style.width = bits === 32 ? '8px' : (bits === 8 ? '8px' : '8px');
+  });
+  const info = {
+    32: '4.294.967.296 mögliche Stufen &middot; 100% Größe',
+    8: '256 mögliche Stufen &middot; 25% Größe',
+    6: '64 mögliche Stufen &middot; 19% Größe',
+  };
+  document.getElementById('quantInfo').innerHTML = info[bits];
+}
+setQuant(32);
+
+// 9: TTT
+const tttTimeline = document.getElementById('tttTimeline');
+const numChunks = 8;
+for (let i = 0; i < numChunks; i++) {
+  const chunk = document.createElement('div');
+  chunk.className = 'ttt-chunk';
+  chunk.innerHTML = `
+    <div class="phase phase-score">&#128203;<br>Benoten</div>
+    <div class="phase phase-learn">&#129504;<br>Lernen</div>
+  `;
+  chunk.onclick = () => activateTTTChunk(i);
+  tttTimeline.appendChild(chunk);
+}
+
+let tttActive = -1;
+function activateTTTChunk(idx) {
+  const chunks = document.querySelectorAll('.ttt-chunk');
+  tttActive = idx;
+  chunks.forEach((c, i) => {
+    c.classList.toggle('active', i <= idx);
+  });
+  const pct = 30 + (idx + 1) * (60 / numChunks);
+  document.getElementById('brainFill').style.width = pct + '%';
+  document.getElementById('brainPct').textContent = Math.round(pct) + '%';
+}
+
+// Auto-play TTT
+let tttAutoIdx = -1;
+function autoPlayTTT() {
+  tttAutoIdx++;
+  if (tttAutoIdx >= numChunks) { tttAutoIdx = -1; setTimeout(autoPlayTTT, 2000); return; }
+  activateTTTChunk(tttAutoIdx);
+  setTimeout(autoPlayTTT, 800);
+}
+const tttObserver = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting && tttAutoIdx === -1) {
+    tttAutoIdx = -1;
+    autoPlayTTT();
+  }
+}, { threshold: 0.5 });
+tttObserver.observe(tttTimeline);
+
+// 10: Pipeline
+const pipeSteps = [
+  { label: '8 Milliarden Wörter', detail: 'FineWeb Trainingstext', color: '#60a5fa' },
+  { label: 'Transformer (11 Layer)', detail: 'Attention + MLP + Skip Connections', color: '#60a5fa' },
+  { label: '+ Layer Looping', detail: 'Layer 3-5 dreimal = 17 virtuelle Layer', color: '#a78bfa' },
+  { label: '+ Parallel Residuals', detail: 'Ab Layer 7: Attention & MLP gleichzeitig', color: '#a78bfa' },
+  { label: '+ QK-Gain 5.5', detail: 'Schärferer Fokus als alle anderen', color: '#a78bfa' },
+  { label: 'Muon Optimizer', detail: 'Orthogonale Updates, 10 Min Training', color: '#f472b6' },
+  { label: 'EMA Durchschnitt', detail: 'Gewichts-Durchschnitt über ganzes Training', color: '#f472b6' },
+  { label: 'GPTQ Quantisierung', detail: '32 Bit \u2192 6 Bit (clever gerundet)', color: '#34d399' },
+  { label: 'Brotli Kompression', detail: 'Ergebnis: < 16 MB', color: '#34d399' },
+  { label: 'Test-Time Training', detail: 'Weiterlernen bei der Prüfung', color: '#fbbf24' },
+  { label: 'Finale Note: X.XX BPB', detail: 'Ziel: unter 1.0810', color: '#fbbf24' },
+];
+const pipeline = document.getElementById('pipeline');
+pipeSteps.forEach((s, i) => {
+  if (i > 0) {
+    const arrow = document.createElement('div');
+    arrow.className = 'pipe-arrow';
+    arrow.style.background = s.color + '44';
+    pipeline.appendChild(arrow);
+  }
+  const step = document.createElement('div');
+  step.className = 'pipe-step';
+  step.style.borderColor = s.color + '33';
+  step.innerHTML = `<div class="step-label" style="color:${s.color}">${s.label}</div><div class="step-detail">${s.detail}</div>`;
+  step.onmouseenter = () => step.classList.add('active');
+  step.onmouseleave = () => step.classList.remove('active');
+  if (i === 0) step.style.borderRadius = '14px 14px 0 0';
+  if (i === pipeSteps.length - 1) step.style.borderRadius = '0 0 14px 14px';
+  pipeline.appendChild(step);
+});
+
+// Pipeline auto-highlight
+let pipeIdx = 0;
+const pipeObserver = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) {
+    function highlightNext() {
+      const steps = pipeline.querySelectorAll('.pipe-step');
+      steps.forEach(s => s.classList.remove('active'));
+      if (pipeIdx < steps.length) {
+        steps[pipeIdx].classList.add('active');
+        pipeIdx++;
+        setTimeout(highlightNext, 600);
+      } else {
+        pipeIdx = 0;
+        setTimeout(() => { steps.forEach(s => s.classList.remove('active')); }, 1500);
+      }
+    }
+    pipeIdx = 0;
+    highlightNext();
+  }
+}, { threshold: 0.5 });
+pipeObserver.observe(pipeline);
+</script>
+</body>
+</html>

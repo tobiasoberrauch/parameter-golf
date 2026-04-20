@@ -38,16 +38,37 @@ import time
 import urllib.request
 import urllib.error
 
+def load_dotenv():
+    """Load .env file from project root (no dependencies needed)."""
+    for env_path in [".env", os.path.join(os.path.dirname(__file__), "..", ".env")]:
+        env_path = os.path.abspath(env_path)
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        value = value.strip().strip("'\"")
+                        os.environ.setdefault(key.strip(), value)
+            return env_path
+    return None
+
 RUNPOD_API = "https://api.runpod.io/graphql"
 GITHUB_REPO = "https://github.com/tobiasoberrauch/parameter-golf.git"
 BRANCH = "my-submission"
 
 # GPU configurations and pricing (approx $/hr)
 GPU_CONFIGS = {
-    "1xH100": {"gpu_type_id": "NVIDIA H100 80GB HBM3", "gpu_count": 1, "price_hr": 3.0},
-    "8xH100": {"gpu_type_id": "NVIDIA H100 80GB HBM3", "gpu_count": 8, "price_hr": 20.0},
-    "1xA100": {"gpu_type_id": "NVIDIA A100 80GB PCIe", "gpu_count": 1, "price_hr": 1.5},
-    "8xA100": {"gpu_type_id": "NVIDIA A100 80GB PCIe", "gpu_count": 8, "price_hr": 12.0},
+    "1xH100": {"gpu_type_id": "NVIDIA H100 80GB HBM3", "gpu_count": 1, "price_hr": 2.69},
+    "8xH100": {"gpu_type_id": "NVIDIA H100 80GB HBM3", "gpu_count": 8, "price_hr": 21.5},
+    "1xA100-SXM": {"gpu_type_id": "NVIDIA A100 SXM 80GB", "gpu_count": 1, "price_hr": 1.39},
+    "1xA100": {"gpu_type_id": "NVIDIA A100 80GB PCIe", "gpu_count": 1, "price_hr": 1.19},
+    "8xA100": {"gpu_type_id": "NVIDIA A100 80GB PCIe", "gpu_count": 8, "price_hr": 9.5},
+    "1xL40S": {"gpu_type_id": "NVIDIA L40S", "gpu_count": 1, "price_hr": 0.79},
+    "1xA6000": {"gpu_type_id": "NVIDIA RTX A6000", "gpu_count": 1, "price_hr": 0.33},
+    "1xRTX4090": {"gpu_type_id": "NVIDIA RTX 4090", "gpu_count": 1, "price_hr": 0.34},
 }
 
 TRACK_CONFIGS = {
@@ -118,24 +139,39 @@ def runpod_query(api_key: str, query: str, variables: dict | None = None) -> dic
         payload["variables"] = variables
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
-        f"{RUNPOD_API}?api_key={api_key}",
+        RUNPOD_API,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "parameter-golf/1.0",
+        },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        print(f"  API Error {e.code}: {e.reason}")
+        if body:
+            print(f"  Response: {body[:300]}")
+        raise
     if "errors" in result:
         raise RuntimeError(f"RunPod API error: {result['errors']}")
     return result["data"]
 
 
-def create_pod(api_key: str, gpu_config: str, name: str = "param-golf") -> str:
-    """Create a RunPod GPU pod and return its ID."""
+def create_pod(api_key: str, gpu_config: str, name: str = "param-golf",
+               cloud_type: str = "ALL") -> str:
+    """Create a RunPod GPU pod and return its ID.
+    cloud_type: ALL (any), COMMUNITY (cheaper, more available), SECURE (dedicated)
+    """
     cfg = GPU_CONFIGS[gpu_config]
     query = """
     mutation {{
         podFindAndDeployOnDemand(input: {{
             name: "{name}",
+            cloudType: {cloud_type},
             imageName: "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
             gpuTypeId: "{gpu_type}",
             gpuCount: {gpu_count},
@@ -153,7 +189,7 @@ def create_pod(api_key: str, gpu_config: str, name: str = "param-golf") -> str:
             }}
         }}
     }}
-    """.format(name=name, gpu_type=cfg["gpu_type_id"], gpu_count=cfg["gpu_count"])
+    """.format(name=name, cloud_type=cloud_type, gpu_type=cfg["gpu_type_id"], gpu_count=cfg["gpu_count"])
     result = runpod_query(api_key, query)
     pod = result["podFindAndDeployOnDemand"]
     return pod["id"]
@@ -441,16 +477,23 @@ Beispiele:
                         help="Don't terminate pod after runs (saves setup for next phase)")
     parser.add_argument("--pod-id", default=None,
                         help="Use existing pod instead of creating new one")
+    parser.add_argument("--community", action="store_true",
+                        help="Use Community Cloud (cheaper, more available)")
     parser.add_argument("--log-dir", default="./logs/runpod",
                         help="Local directory for downloaded logs")
     parser.add_argument("--skip-setup", action="store_true",
                         help="Skip clone/retokenize (pod already set up)")
     args = parser.parse_args()
 
+    env_file = load_dotenv()
+    if env_file:
+        print(f"  .env geladen: {env_file}")
+
     api_key = os.environ.get("RUNPOD_API_KEY")
     if not api_key and not args.dry_run:
         print("ERROR: RUNPOD_API_KEY nicht gesetzt!")
-        print("  export RUNPOD_API_KEY='your-key-here'")
+        print("  Option 1: echo 'RUNPOD_API_KEY=dein-key' > .env")
+        print("  Option 2: export RUNPOD_API_KEY='dein-key'")
         sys.exit(1)
 
     gpu_config = args.gpu
@@ -517,7 +560,9 @@ Beispiele:
         # Step 1: Create or use existing pod
         if not pod_id:
             print("\n[1/4] Pod erstellen...")
-            pod_id = create_pod(api_key, gpu_config, name=f"param-golf-{gpu_config}")
+            cloud_type = "COMMUNITY" if args.community else "ALL"
+            pod_id = create_pod(api_key, gpu_config, name=f"param-golf-{gpu_config}",
+                                cloud_type=cloud_type)
             created_pod = True
             print(f"  Pod ID: {pod_id}")
         else:
